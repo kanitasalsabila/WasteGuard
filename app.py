@@ -24,48 +24,63 @@ with tab1:
     uploaded_file = st.file_uploader("Unggah file CSV (harus mengandung kolom 'ds', 'depth', 'ph', 'tds')", type=["csv"])
 
     if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
+        try:
+            df = pd.read_csv(uploaded_file)
 
-        # Validasi kolom wajib
-        expected_cols = {"ds", "depth", "ph", "tds"}
-        if not expected_cols.issubset(df.columns):
-            st.error(f"Kolom wajib tidak lengkap. Diperlukan: {expected_cols}")
-        else:
-            df["ds"] = pd.to_datetime(df["ds"])
-            st.info("📌 Data berhasil dibaca. Menjalankan prediksi...")
+            # Validasi kolom wajib
+            expected_cols = {"ds", "depth", "ph", "tds"}
+            if not expected_cols.issubset(df.columns):
+                st.error(f"Kolom wajib tidak lengkap. Diperlukan: {expected_cols}")
+            else:
+                # Bersihkan angka dari tanda titik (.) jika perlu
+                for col in ["depth", "ph", "tds"]:
+                    df[col] = df[col].astype(str).str.replace(".", "", regex=False)
+                    df[col] = pd.to_numeric(df[col], errors='coerce')  # Ubah ke float, invalid -> NaN
 
-            forecast_results = []
+                df["ds"] = pd.to_datetime(df["ds"], errors='coerce')
 
-            for i, row in df.iterrows():
-                date_input = pd.DataFrame({"ds": [row["ds"]]})
-                f_depth = prophet_models["depth"].predict(date_input)["yhat"].values[0]
-                f_ph = prophet_models["ph"].predict(date_input)["yhat"].values[0]
-                f_tds = prophet_models["tds"].predict(date_input)["yhat"].values[0]
+                # Hapus baris yang mengandung nilai kosong
+                df = df.dropna(subset=["ds", "depth", "ph", "tds"])
 
-                forecast_results.append({
-                    "forecast_depth": round(min(f_depth, 20), 2),
-                    "forecast_ph": round(max(f_ph, 0), 2),
-                    "forecast_tds": round(f_tds, 2),
-                })
+                if df.empty:
+                    st.error("Semua baris data tidak valid setelah dibersihkan. Periksa format data Anda.")
+                else:
+                    st.info("📌 Data berhasil dibaca & dibersihkan. Menjalankan prediksi...")
 
-            forecast_df = pd.DataFrame(forecast_results)
-            final_df = pd.concat([df.reset_index(drop=True), forecast_df], axis=1)
+                    forecast_results = []
+                    for i, row in df.iterrows():
+                        date_input = pd.DataFrame({"ds": [row["ds"]]})
+                        f_depth = prophet_models["depth"].predict(date_input)["yhat"].values[0]
+                        f_ph = prophet_models["ph"].predict(date_input)["yhat"].values[0]
+                        f_tds = prophet_models["tds"].predict(date_input)["yhat"].values[0]
 
-            # Klasifikasi risiko
-            classify_input = final_df[["forecast_depth", "forecast_ph", "forecast_tds"]]
-            final_df["Prediksi_Risiko"] = rf_model.predict(classify_input)
+                        forecast_results.append({
+                            "forecast_depth": round(min(f_depth, 20), 2),
+                            "forecast_ph": round(max(f_ph, 0), 2),
+                            "forecast_tds": round(f_tds, 2),
+                        })
 
-            st.success("✅ Forecast & klasifikasi selesai!")
-            st.subheader("📄 Tabel Hasil:")
-            st.dataframe(final_df, use_container_width=True)
+                    forecast_df = pd.DataFrame(forecast_results)
+                    final_df = pd.concat([df.reset_index(drop=True), forecast_df], axis=1)
 
-            csv = final_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="⬇️ Download Hasil sebagai CSV",
-                data=csv,
-                file_name="hasil_forecast_klasifikasi.csv",
-                mime="text/csv"
-            )
+                    # Klasifikasi risiko
+                    classify_input = final_df[["forecast_depth", "forecast_ph", "forecast_tds"]]
+                    final_df["Prediksi_Risiko"] = rf_model.predict(classify_input)
+
+                    st.success("✅ Forecast & klasifikasi selesai!")
+                    st.subheader("📄 Tabel Hasil:")
+                    st.dataframe(final_df, use_container_width=True)
+
+                    csv = final_df.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        label="⬇️ Download Hasil sebagai CSV",
+                        data=csv,
+                        file_name="hasil_forecast_klasifikasi.csv",
+                        mime="text/csv"
+                    )
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat membaca file: {str(e)}")
+
 
 # =======================
 # Tab 2: Input Manual

@@ -4,7 +4,7 @@ import joblib
 from prophet import Prophet
 
 st.set_page_config(layout="wide")
-st.title("📁 Upload Data atau Input Manual untuk Prediksi & Klasifikasi Risiko Limbah Radioaktif")
+st.title("📁 Prediksi & Klasifikasi Risiko Kemananan Penyimpanan Limbah Radioaktif")
 
 # =======================
 # Load Model
@@ -71,22 +71,44 @@ with tab1:
 # Tab 2: Input Manual
 # =======================
 with tab2:
-    st.write("Masukkan nilai parameter secara manual untuk klasifikasi risiko (tanpa forecasting)")
+    st.write("Masukkan nilai parameter untuk klasifikasi risiko. Kamu juga bisa memasukkan tanggal jika ingin menjalankan *forecasting*.")
 
-    depth = st.number_input("Depth", min_value=0.0, max_value=20.0, step=0.1)
-    ph = st.number_input("pH", min_value=0.0, max_value=14.0, step=0.1)
-    tds = st.number_input("TDS", min_value=0.0, max_value=5000.0, step=1.0)
+    use_forecast = st.checkbox("Gunakan tanggal & jalankan *forecasting* dari model?", value=False)
 
-    if st.button("Prediksi Risiko"):
-        input_df = pd.DataFrame({
-            "forecast_depth": [depth],
-            "forecast_ph": [ph],
-            "forecast_tds": [tds],
-        })
+    if use_forecast:
+        input_date = st.date_input("Tanggal untuk forecasting")
+        if st.button("Prediksi Risiko (dengan Forecasting)"):
+            date_input = pd.DataFrame({"ds": [pd.to_datetime(input_date)]})
+            f_depth = prophet_models["depth"].predict(date_input)["yhat"].values[0]
+            f_ph = prophet_models["ph"].predict(date_input)["yhat"].values[0]
+            f_tds = prophet_models["tds"].predict(date_input)["yhat"].values[0]
 
-        pred_risk = rf_model.predict(input_df)[0]
+            input_df = pd.DataFrame({
+                "forecast_depth": [round(min(f_depth, 20), 2)],
+                "forecast_ph": [round(max(f_ph, 0), 2)],
+                "forecast_tds": [round(f_tds, 2)],
+            })
 
-        st.success(f"✅ Prediksi Risiko ESG: {pred_risk}")
-        st.dataframe(input_df.assign(Prediksi_Risiko=pred_risk))
+            pred_risk = rf_model.predict(input_df)[0]
+
+            st.success(f"✅ Prediksi Risiko ESG: {pred_risk}")
+            st.dataframe(input_df.assign(Prediksi_Risiko=pred_risk))
+
+    else:
+        depth = st.number_input("Depth", min_value=0.0, max_value=20.0, step=0.1)
+        ph = st.number_input("pH", min_value=0.0, max_value=14.0, step=0.1)
+        tds = st.number_input("TDS", min_value=0.0, max_value=5000.0, step=1.0)
+
+        if st.button("Prediksi Risiko (manual tanpa forecasting)"):
+            input_df = pd.DataFrame({
+                "forecast_depth": [depth],
+                "forecast_ph": [ph],
+                "forecast_tds": [tds],
+            })
+
+            pred_risk = rf_model.predict(input_df)[0]
+
+            st.success(f"✅ Prediksi Risiko ESG: {pred_risk}")
+            st.dataframe(input_df.assign(Prediksi_Risiko=pred_risk))
 
 st.caption("Model oleh Kanita Salsabila Dwi Irmanti || WasteGuard")
